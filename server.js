@@ -3,7 +3,18 @@ const path = require('path');
 const scraper = require('./scraper');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 5000;
+
+// ─── CORS Middleware ─────────────────────────────────────────────────────────
+app.use((req, res, next) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.set('Access-Control-Allow-Headers', '*');
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+  next();
+});
 
 // Serve static files
 app.use(express.static(path.join(__dirname, 'public')));
