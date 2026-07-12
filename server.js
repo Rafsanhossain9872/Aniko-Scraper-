@@ -75,14 +75,27 @@ app.use('/api/proxy', async (req, res) => {
   }
   try {
     const targetUrl = req.query.url;
-    const referer = req.query.referer || 'https://megaplay.buzz/';
-    
+
     if (!targetUrl) return res.status(400).send('Missing url parameter');
+
+    // Derive referer/origin dynamically per-target instead of one static default
+    const targetOrigin = new URL(targetUrl).origin;
+    const referer = req.query.referer || `${targetOrigin}/`;
+    const origin = new URL(referer).origin;
 
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
       'Referer': referer,
-      'Origin': new URL(referer).origin
+      'Origin': origin,
+      'Accept': targetUrl.includes('.m3u8')
+        ? 'application/vnd.apple.mpegurl, */*'
+        : '*/*',
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Sec-Fetch-Mode': 'cors',
+      'Sec-Fetch-Dest': targetUrl.includes('.m3u8') ? 'empty' : 'video',
+      // Pass through the client's Range header so CDNs serving byte-range
+      // segments see a proper range request instead of a full-file GET
+      ...(req.headers.range ? { Range: req.headers.range } : {}),
     };
 
     const response = await axios({
@@ -97,9 +110,19 @@ app.use('/api/proxy', async (req, res) => {
       return res.status(response.status).send('Upstream error: ' + response.status);
     }
 
+    res.status(response.status); // preserve 206 Partial Content for range requests
     res.set('Access-Control-Allow-Origin', '*');
     if (response.headers['content-type']) {
       res.set('Content-Type', response.headers['content-type']);
+    }
+    if (response.headers['content-length']) {
+      res.set('Content-Length', response.headers['content-length']);
+    }
+    if (response.headers['content-range']) {
+      res.set('Content-Range', response.headers['content-range']);
+    }
+    if (response.headers['accept-ranges']) {
+      res.set('Accept-Ranges', response.headers['accept-ranges']);
     }
 
     if (targetUrl.includes('.m3u8')) {
